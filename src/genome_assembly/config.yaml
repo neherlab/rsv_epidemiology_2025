@@ -1,0 +1,7 @@
+base_dir: "."
+res_dir_name: "results"
+ann_filename: "annotation.tsv"
+read_length: 80
+min_cov: 100
+freq_threshold: 0.9
+allow_cleanup: True

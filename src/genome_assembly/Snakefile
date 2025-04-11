@@ -1,0 +1,227 @@
+import os
+import glob
+import pandas as pd
+
+
+base_dir = config.get("base_dir", ".")
+res_dir_name = config.get("res_dir_name", "results")
+ann_filename = config.get("ann_filename", "annotation.tsv")
+
+
+def load_sample_mapping(filepath):
+    df = pd.read_csv(filepath, sep="\t")
+    df["NGS_ID"] = df["NGS_ID"].str.replace("_", "-")
+    return dict(zip(df["NGS_ID"], df["Virus Type"]))
+
+
+def get_primer_file(filepath):
+    df = pd.read_csv(filepath, sep="\t")
+    df["NGS_ID"] = df["NGS_ID"].str.replace("_", "-")
+
+    def get_row_primer(row):
+        def add_rsv_type(s, rsv):
+            return f"{rsv.lower()[-1]}_primers_{s}"
+
+        if row["amplicon_types"] == "500bp, 1000bp, 2000bp":
+            s = "revised"
+        else:
+            pool_map = {
+                "500bp": {
+                    "Pool 1, Pool 2": "500bp",
+                    "Pool 1": "500bp_even",
+                    "default": "500bp_odd",
+                },
+                "1000bp": {
+                    "Pool 1, Pool 2": "1000bp",
+                    "Pool 1": "1000bp_odd",
+                    "default": "1000bp_even",
+                },
+                "2000bp": {
+                    "Pool 1, Pool 2": "2000bp",
+                    "Pool 1": "2000bp_odd",
+                    "default": "2000bp_even",
+                },
+            }
+
+            design_map = pool_map.get(row["amplicon_types"], {})
+            s = design_map.get(row["Pools"], design_map["default"])
+
+        return os.path.join(base_dir, "data", "primers", f"rsv_{add_rsv_type(s, row['Virus Type'])}.csv")
+
+    return dict(
+        zip(df["NGS_ID"].values, df.apply(lambda x: get_row_primer(x), axis=1).values)
+    )
+
+
+data_dir = os.path.join(base_dir, "data/samples")
+gen_outdir = os.path.join(base_dir, res_dir_name)
+os.makedirs(gen_outdir, exist_ok=True)
+rsv_type_mapping_path = os.path.join(base_dir, "data", ann_filename)
+GENOMES = ["rsva", "rsvb"]
+
+sample_to_primer = get_primer_file(rsv_type_mapping_path)
+
+sample_to_virus_type = load_sample_mapping(rsv_type_mapping_path)
+print(f"SAMPLES IN THE ANNOTATION FILE: {len(sample_to_virus_type)}")
+samples = list(
+    set(sample_to_virus_type.keys()).intersection(
+        [os.path.basename(x) for x in glob.glob(data_dir + "/*")]
+    )
+)
+print(f"SAMPLES WITHOUT FQ FILES FOUND: {len(sample_to_virus_type) - len(samples)}")
+
+references = {
+    "HRSVA": os.path.join(base_dir, "data", "ref_genomes", "rsva_ref.fasta"),
+    "HRSVB": os.path.join(base_dir, "data", "ref_genomes", "rsvb_ref.fasta"),
+}
+
+assert not len(set(samples).difference(set(sample_to_virus_type.keys())))
+
+
+rule all:
+    input:
+        expand(
+            os.path.join("{outdir}", "{sample}", "consensus.fasta"),
+            outdir=gen_outdir,
+            sample=samples,
+        ),
+        expand(
+            os.path.join("{outdir}", "{sample}", "figures", "coverage.png"),
+            outdir=gen_outdir,
+            sample=samples,
+        ),
+        expand(
+            os.path.join("{outdir}", "{sample}", "mapped_reads_sorted.bam"),
+            outdir=gen_outdir,
+            sample=samples,
+        ),
+        expand(
+            os.path.join("{outdir}", "{sample}", "mapped_reads_sorted.bam.bai"),
+            outdir=gen_outdir,
+            sample=samples,
+        ),
+        expand(
+            os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.{ext}"),
+            genome=GENOMES,
+            ext=["bwt", "sa", "ann", "amb", "pac"]
+        )
+
+
+rule bwa_index:
+    input:
+        ref_file=os.path.join(base_dir, "data", "ref_genomes",  "{genome}_ref.fasta"),
+    output:
+        bwt=os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.bwt"),
+        sa=os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.sa"),
+        ann=os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.ann"),
+        amb=os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.amb"),
+        pac=os.path.join(base_dir, "data", "ref_genomes", "{genome}_ref.fasta.pac"),
+    shell:
+        """
+        bwa index {input.ref_file}
+        """
+
+
+rule trim:
+    input:
+        r1=os.path.join(data_dir, "{sample}", "{sample}_R1.fastq.gz"),
+        r2=os.path.join(data_dir, "{sample}", "{sample}_R2.fastq.gz"),
+    output:
+        trimmed_r1=os.path.join(gen_outdir, "{sample}", "trimmed_r1.fq.gz"),
+        trimmed_r2=os.path.join(gen_outdir, "{sample}", "trimmed_r2.fq.gz"),
+    params:
+        outdir=os.path.join(gen_outdir, "{sample}", "trimming"),
+        length=config.get("read_length", 80),
+    shell:
+        """
+        mkdir -p {params.outdir}
+        trim_galore --length {params.length} --output {params.outdir} --retain_unpaired --paired {input.r1} {input.r2}
+        mv {params.outdir}/{wildcards.sample}_R1_val_1.fq.gz {output.trimmed_r1}
+        mv {params.outdir}/{wildcards.sample}_R2_val_2.fq.gz {output.trimmed_r2}
+        """
+
+
+rule map:
+    input:
+        ref=lambda wildcards: references[
+            sample_to_virus_type[wildcards.sample.lstrip("/")]
+        ],
+        index=lambda wildcards: [
+            references[sample_to_virus_type[wildcards.sample.lstrip("/")]] + ext
+            for ext in [".bwt", ".sa", ".ann", ".amb", ".pac"]
+        ],
+        reads=[
+            gen_outdir + "{sample}/trimmed_r1.fq.gz",
+            gen_outdir + "{sample}/trimmed_r2.fq.gz",
+        ],
+    output:
+        bam_sorted=gen_outdir + "{sample}/mapped_reads_sorted.bam",
+        bam_index=gen_outdir + "{sample}/mapped_reads_sorted.bam.bai",
+    params:
+        exclude_clipped=1,
+    shell:
+        r"""
+        echo "Mapping {wildcards.sample} using reference genome {input.ref}"
+        mkdir -p tmp
+        bwa mem {input.ref} {input.reads[0]} {input.reads[1]} | \
+        ./filter_clipping.sh /dev/stdin tmp{wildcards.sample}_filtered.bam {params.exclude_clipped}
+        samtools sort tmp{wildcards.sample}_filtered.bam -o {output.bam_sorted}
+        samtools index {output.bam_sorted}
+        rm tmp{wildcards.sample}_filtered.bam
+        echo "Mapping completed for {wildcards.sample}"
+        """
+
+
+rule pileup:
+    input:
+        reads=gen_outdir + "/{sample}/mapped_reads_sorted.bam",
+        primers=lambda wildcards: sample_to_primer[wildcards.sample.lstrip("/")],
+    output:
+        gen_outdir + "/{sample}/allele_counts.npz",
+    params:
+        path_to_script="src",
+        out_dir=gen_outdir + "/{sample}",
+        both_dir_primer_trim=True,
+    shell:
+        """
+        python3 {params.path_to_script}/create_allele_counts.py --bam_file {input.reads} --primers {input.primers} --out_dir {params.out_dir} --both_dir_primer_trim {params.both_dir_primer_trim}
+        """
+
+
+rule consensus:
+    input:
+        counts=gen_outdir + "/{sample}/allele_counts.npz",
+        primers=lambda wildcards: sample_to_primer[wildcards.sample.lstrip("/")],
+    output:
+        gen_outdir + "/{sample}/consensus.fasta",
+        gen_outdir + "/{sample}/figures/coverage.png",
+    params:
+        path_to_script="src",
+        out_dir=gen_outdir + "/{sample}",
+        min_cov=config.get("min_cov", 100),
+        freq_threshold=config.get("freq_threshold", 0.9),
+    shell:
+        """
+        python3 {params.path_to_script}/coverage_consensus_diversity.py --sample {params.out_dir} --out_dir {params.out_dir} --primers {input.primers} --freq_threshold {params.freq_threshold}
+        """
+
+rule cleanup:
+    shell:
+        """
+        if [ "$(grep -i allow_cleanup config.yaml | grep -i true)" ]; then
+            echo "Cleaning analysis results in {gen_outdir}..."
+            for d in {gen_outdir}/*; do
+                rm -f $d/*.bam
+                rm -f $d/*.bam.bai
+                rm -f $d/trimmed_*.fq.gz
+                rm -f $d/allele_counts.npz
+                rm -f $d/insertions.pkl.gz
+                rm -rf $d/trimming
+            done
+
+            echo "Cleaning reference genome indexes in {base_dir}/data/ref_genomes/..."
+            find {base_dir}/data/ref_genomes/ -type f ! -name "*.fasta" -delete
+        else
+            echo "Cleanup not allowed. Set allow_cleanup: true in config.yaml to enable."
+        fi
+        """

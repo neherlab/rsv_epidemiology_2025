@@ -1,0 +1,18 @@
+name: svvc
+channels:
+- conda-forge
+- bioconda
+- defaults
+dependencies:
+- bwa
+- trim-galore
+- samtools
+- pip
+- pip:
+  - numpy
+  - snakemake
+  - pysam
+  - matplotlib
+  - seaborn
+  - pandas
+  - biopython
