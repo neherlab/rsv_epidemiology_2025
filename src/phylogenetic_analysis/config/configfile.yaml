@@ -1,0 +1,70 @@
+conda_environment: "workflow/envs/nextstrain.yaml"
+
+genesforglycosylation: ["G", "F"]
+
+builds_to_run: ["genome"]
+# Options: ["genome", "G", "F"]
+
+resolutions_to_run: ["recent", "all-time", "5y"]
+
+
+exclude: "config/outliers.txt"
+
+description: "config/description.md"
+
+strain_id_field: "accession"
+display_strain_field: "strain"
+
+subtypes: ["a", "b"]
+
+filter:
+  group_by: "year country"
+  min_coverage:
+    genome: 0.8
+    G: 0.8
+    F: 0.8
+
+  min_length:
+    genome: 10000
+    G: 600
+    F: 1200
+  resolutions:
+    recent:
+      max_date: 1D
+      min_date: 3Y
+    all-time:
+      max_date: 1D
+      min_date: 1975-01-01
+    5y:
+      max_date: 1D
+      min_date: 5Y
+
+  subsample_max_sequences:
+    genome: 50
+    G: 1000
+    F: 1000
+
+files:
+  color_schemes: "config/colors.tsv"
+  auspice_config: "config/auspice_config.json"
+
+refine:
+  coalescent: "opt"
+  date_inference: "marginal"
+  clock_filter_iqd: 4
+
+ancestral:
+  inference: "joint"
+
+traits:
+  columns: "country"
+
+nextclade_attributes:
+  a:
+    name: "RSV-A NextClade using real-time tree"
+    reference_name: "hRSV/A/England/397/2017"
+    accession: "EPI_ISL_412866"
+  b:
+    name: "RSV-B NextClade using real-time tree"
+    reference_name: "hRSV/B/Australia/VIC-RCH056/2019"
+    accession: "EPI_ISL_1653999"

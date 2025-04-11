@@ -164,3 +164,11 @@ cython_debug/
 .snakemake/
 src/*/data/*
 src/*/results/*
+
+src/*/auspice/
+src/*/build/
+src/*/ingest/benchmarks/
+src/*/ingest/rsv-a_nextclade/
+src/*/ingest/rsv-b_nextclade/
+src/*/config/clades_consortium_*.tsv
+src/*/input_lab_samples/

@@ -1,0 +1,73 @@
+{
+  "title": "Genomic epidemiology of RSV",
+  "maintainers": [
+    {"name": "Nextstrain team", "url": "http://nextstrain.org"},
+    {"name": "Richard Neher", "url": "http://nextstrain.org"}
+
+  ],
+  "data_provenance": [
+    {
+      "name": "GenBank",
+      "url": "https://www.ncbi.nlm.nih.gov/genbank/"
+    }
+  ],
+  "build_url": "https://github.com/nextstrain/rsv",
+
+  "colorings": [
+    {
+      "key": "gt",
+      "title": "Genotype",
+      "type": "categorical"
+    },
+    {
+      "key": "num_date",
+      "title": "Date",
+      "type": "continuous"
+    },
+    {
+      "key": "country",
+      "title": "Country",
+      "type": "categorical"
+    },
+    {
+      "key": "region",
+      "title": "Region",
+      "type": "categorical"
+    },
+    {
+      "key": "source",
+      "title": "Source",
+      "type": "categorical"
+    },
+    {
+      "key": "Patient_Nr",
+      "title": "Patient",
+      "type": "categorical"
+    },
+    {
+      "key": "glyc",
+      "title": "Glycosylation",
+      "type": "ordinal"
+    }  ],
+  "geo_resolutions": [
+    "country",
+    "region"
+  ],
+  "panels": [
+     "tree",
+     "map",
+     "entropy",
+     "frequencies"
+  ],
+  "display_defaults": {
+    "map_triplicate": true,
+    "color_by" : "clade_membership",
+    "transmission_lines": false
+    },
+  "filters": [
+    "country",
+    "region",
+    "clade_membership",
+    "source",
+    "Patient_Nr"]
+}
